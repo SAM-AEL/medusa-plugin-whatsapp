@@ -63,6 +63,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     try {
         const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`
 
+        if (process.env.NODE_ENV === "development") {
+            console.log("[WhatsApp Dev] Sending test message to:", url)
+            console.log("[WhatsApp Dev] Request payload:", JSON.stringify(requestPayload, null, 2))
+        }
+
         const response = await fetch(url, {
             method: "POST",
             headers: {

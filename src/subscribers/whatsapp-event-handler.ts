@@ -3,6 +3,21 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 
 const WHATSAPP_MODULE = "whatsapp"
 
+// Fields to fetch per entity type via query.graph
+const ORDER_FIELDS = [
+    "id", "display_id", "status", "total", "subtotal", "currency_code", "email",
+    "shipping_address.first_name", "shipping_address.last_name",
+    "shipping_address.phone", "shipping_address.city",
+    "billing_address.first_name", "billing_address.last_name", "billing_address.phone",
+    "customer.first_name", "customer.last_name", "customer.email", "customer.phone",
+]
+
+const CUSTOMER_FIELDS = ["id", "email", "first_name", "last_name", "phone"]
+
+const FULFILLMENT_FIELDS = ["id", "tracking_numbers", "provider_id"]
+
+const RETURN_FIELDS = ["id", "status", "order_id"]
+
 export default async function whatsappEventHandler({
     event: { name, data },
     container,
@@ -36,6 +51,9 @@ export default async function whatsappEventHandler({
 
         if (!mappings || mappings.length === 0) return
 
+        // Fetch full entity data for template variable resolution
+        const enrichedData = await fetchEntityData(data, name, container, logger)
+
         for (const mapping of mappings) {
             // Resolve phone based on mapping's recipient_type
             const recipientPhone = await resolvePhoneNumber(
@@ -51,13 +69,23 @@ export default async function whatsappEventHandler({
                 continue
             }
 
+            // Parse template_variables (handle both string and object)
+            let templateVars: Record<string, string> = {}
+            if (mapping.template_variables) {
+                if (typeof mapping.template_variables === "string") {
+                    try { templateVars = JSON.parse(mapping.template_variables) } catch { /* ignore */ }
+                } else {
+                    templateVars = mapping.template_variables
+                }
+            }
+
             // Build template variables
             const components: any[] = []
-            if (mapping.template_variables && Object.keys(mapping.template_variables).length > 0) {
-                const bodyParams = Object.entries(mapping.template_variables).map(
+            if (Object.keys(templateVars).length > 0) {
+                const bodyParams = Object.entries(templateVars).map(
                     ([_key, path]: [string, any]) => ({
                         type: "text" as const,
-                        text: String(resolveDataPath(data, path as string) || path),
+                        text: String(resolveDataPath(enrichedData, path as string) || path),
                     })
                 )
                 if (bodyParams.length > 0) {
@@ -81,6 +109,13 @@ export default async function whatsappEventHandler({
 
             try {
                 const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`
+                
+                if (process.env.NODE_ENV === "development") {
+                    console.log(`[WhatsApp Dev] Sending "${name}" event message to:`, url)
+                    console.log("[WhatsApp Dev] Enriched data:", JSON.stringify(enrichedData, null, 2))
+                    console.log("[WhatsApp Dev] Request payload:", JSON.stringify(requestPayload, null, 2))
+                }
+
                 const response = await fetch(url, {
                     method: "POST",
                     headers: {
@@ -132,10 +167,121 @@ export default async function whatsappEventHandler({
 
 /**
  * Resolve a dot-path from nested data.
- * E.g., resolveDataPath(data, "order.customer.phone") => data.order.customer.phone
+ * E.g., resolveDataPath(data, "shipping_address.first_name") => data.shipping_address.first_name
  */
 function resolveDataPath(data: any, path: string): any {
     return path.split(".").reduce((obj, key) => obj?.[key], data)
+}
+
+/**
+ * Fetch full entity data from Medusa using query.graph.
+ * Events typically pass minimal data ({ id }), so we enrich it with actual entity fields.
+ * Falls back to raw event data if fetching fails.
+ */
+async function fetchEntityData(
+    data: any,
+    eventName: string,
+    container: any,
+    logger: any,
+): Promise<Record<string, any>> {
+    try {
+        const query = container.resolve(ContainerRegistrationKeys.QUERY)
+
+        if (eventName.startsWith("order.")) {
+            const { data: orders } = await query.graph({
+                entity: "order",
+                fields: ORDER_FIELDS,
+                filters: { id: data.id },
+            })
+            return orders?.[0] || data
+        }
+
+        if (eventName.startsWith("fulfillment.")) {
+            // Fetch fulfillment data
+            const { data: fulfillments } = await query.graph({
+                entity: "fulfillment",
+                fields: FULFILLMENT_FIELDS,
+                filters: { id: data.id },
+            })
+            const fulfillment = fulfillments?.[0] || {}
+
+            // Also fetch parent order if order_id is available
+            const orderId = data.order_id || fulfillment.order_id
+            if (orderId) {
+                const { data: orders } = await query.graph({
+                    entity: "order",
+                    fields: ORDER_FIELDS,
+                    filters: { id: orderId },
+                })
+                return { ...fulfillment, order: orders?.[0] || {} }
+            }
+
+            return { ...data, ...fulfillment }
+        }
+
+        if (eventName.startsWith("customer.")) {
+            const { data: customers } = await query.graph({
+                entity: "customer",
+                fields: CUSTOMER_FIELDS,
+                filters: { id: data.id },
+            })
+            return customers?.[0] || data
+        }
+
+        if (eventName.startsWith("return.")) {
+            const { data: returns } = await query.graph({
+                entity: "return",
+                fields: RETURN_FIELDS,
+                filters: { id: data.id },
+            })
+            const ret = returns?.[0] || {}
+
+            // Also fetch parent order
+            const orderId = data.order_id || ret.order_id
+            if (orderId) {
+                const { data: orders } = await query.graph({
+                    entity: "order",
+                    fields: ORDER_FIELDS,
+                    filters: { id: orderId },
+                })
+                return { ...ret, order: orders?.[0] || {} }
+            }
+
+            return { ...data, ...ret }
+        }
+
+        if (eventName.startsWith("claim.") || eventName.startsWith("exchange.")) {
+            // Claims/exchanges share a similar pattern — fetch with parent order
+            const entity = eventName.startsWith("claim.") ? "claim" : "exchange"
+            try {
+                const { data: items } = await query.graph({
+                    entity,
+                    fields: ["id", "type", "order_id"],
+                    filters: { id: data.id },
+                })
+                const item = items?.[0] || {}
+
+                const orderId = data.order_id || item.order_id
+                if (orderId) {
+                    const { data: orders } = await query.graph({
+                        entity: "order",
+                        fields: ORDER_FIELDS,
+                        filters: { id: orderId },
+                    })
+                    return { ...item, order: orders?.[0] || {} }
+                }
+
+                return { ...data, ...item }
+            } catch {
+                return data
+            }
+        }
+
+        return data
+    } catch (err: any) {
+        logger.warn(`[WhatsApp] Could not fetch entity data for ${eventName}: ${err.message}`)
+        return data // fall back to raw event data
+    }
 }
 
 /**

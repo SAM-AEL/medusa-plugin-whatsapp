@@ -1,9 +1,10 @@
 declare const __BACKEND_URL__: string | undefined
 
 import { defineRouteConfig } from "@medusajs/admin-sdk"
-import { ChatBubbleLeftRight } from "@medusajs/icons"
-import { Container, Heading, Button, Input, Label, Switch, Table, Badge, Text, Select, Toaster, toast } from "@medusajs/ui"
+import { ChatBubbleLeftRight, EllipsisHorizontal } from "@medusajs/icons"
+import { Container, Heading, Button, Input, Label, Switch, Table, Badge, Text, Select, Toaster, toast, FocusModal, DropdownMenu, IconButton } from "@medusajs/ui"
 import { useState, useEffect, useCallback } from "react"
+import { useNavigate } from "react-router-dom"
 
 const MEDUSA_EVENTS = [
     "order.placed",
@@ -38,27 +39,21 @@ async function api(path: string, options?: RequestInit) {
 
 // ─── Configuration Section ─────────────────────────────────────
 function ConfigSection() {
-    const [config, setConfig] = useState<any>(null)
+    const [envPhoneNumberId, setEnvPhoneNumberId] = useState<string | null>(null)
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
     const [form, setForm] = useState({
         phone_number_id: "",
-        access_token: "",
-        api_version: "v25.0",
-        default_language_code: "en_US",
         active: true,
     })
 
     const loadConfig = useCallback(async () => {
         setLoading(true)
         const data = await api("/config")
+        if (data.env_phone_number_id) setEnvPhoneNumberId(data.env_phone_number_id)
         if (data.config) {
-            setConfig(data.config)
             setForm({
                 phone_number_id: data.config.phone_number_id || "",
-                access_token: "",
-                api_version: data.config.api_version || "v25.0",
-                default_language_code: data.config.default_language_code || "en_US",
                 active: data.config.active ?? true,
             })
         }
@@ -70,7 +65,6 @@ function ConfigSection() {
     const saveConfig = async () => {
         setSaving(true)
         const payload: any = { ...form }
-        if (!payload.access_token) delete payload.access_token
         await api("/config", { method: "POST", body: JSON.stringify(payload) })
         toast.success("Configuration saved")
         await loadConfig()
@@ -98,41 +92,18 @@ function ConfigSection() {
                     <Label htmlFor="phone-id">Phone Number ID</Label>
                     <Input
                         id="phone-id"
-                        placeholder="e.g. 1234567890"
+                        placeholder={envPhoneNumberId ? `Env: ${envPhoneNumberId}` : "e.g. 1234567890"}
                         value={form.phone_number_id}
                         onChange={(e) => setForm({ ...form, phone_number_id: e.target.value })}
                     />
                 </div>
                 <div>
-                    <Label htmlFor="access-token">
-                        Access Token {config && <Text size="small" className="text-ui-fg-muted">(leave blank to keep current)</Text>}
-                    </Label>
-                    <Input
-                        id="access-token"
-                        type="password"
-                        placeholder={config ? "••••••••" : "Bearer token"}
-                        value={form.access_token}
-                        onChange={(e) => setForm({ ...form, access_token: e.target.value })}
-                    />
+                    <Label>Access Token</Label>
+                    <Text size="small" className="text-ui-fg-muted mt-1">
+                        Configured as Environment Variable
+                    </Text>
                 </div>
-                <div>
-                    <Label htmlFor="api-version">API Version</Label>
-                    <Input
-                        id="api-version"
-                        placeholder="v25.0"
-                        value={form.api_version}
-                        onChange={(e) => setForm({ ...form, api_version: e.target.value })}
-                    />
-                </div>
-                <div>
-                    <Label htmlFor="lang-code">Default Language Code</Label>
-                    <Input
-                        id="lang-code"
-                        placeholder="en_US"
-                        value={form.default_language_code}
-                        onChange={(e) => setForm({ ...form, default_language_code: e.target.value })}
-                    />
-                </div>
+
             </div>
 
             <div className="mt-4 flex justify-end">
@@ -141,13 +112,7 @@ function ConfigSection() {
                 </Button>
             </div>
 
-            {config && (
-                <div className="mt-3">
-                    <Text size="small" className="text-ui-fg-muted">
-                        Current token: {config.access_token}
-                    </Text>
-                </div>
-            )}
+
         </Container>
     )
 }
@@ -161,22 +126,72 @@ const RECIPIENT_OPTIONS = [
 ]
 
 const ORDER_DATA_PATHS = [
+    { value: "display_id", label: "Order ID" },
+    { value: "status", label: "Order Status" },
+    { value: "total", label: "Order Total" },
+    { value: "subtotal", label: "Subtotal" },
+    { value: "currency_code", label: "Currency Code" },
+    { value: "email", label: "Order Email" },
+    { value: "shipping_address.first_name", label: "Shipping First Name" },
+    { value: "shipping_address.last_name", label: "Shipping Last Name" },
+    { value: "shipping_address.phone", label: "Shipping Phone" },
+    { value: "shipping_address.city", label: "Shipping City" },
+    { value: "billing_address.first_name", label: "Billing First Name" },
+    { value: "billing_address.last_name", label: "Billing Last Name" },
+    { value: "billing_address.phone", label: "Billing Phone" },
+    { value: "customer.first_name", label: "Customer First Name" },
+    { value: "customer.last_name", label: "Customer Last Name" },
+    { value: "customer.email", label: "Customer Email" },
+    { value: "customer.phone", label: "Customer Phone" },
+]
+
+const CUSTOMER_DATA_PATHS = [
+    { value: "id", label: "Customer ID" },
+    { value: "email", label: "Email" },
+    { value: "first_name", label: "First Name" },
+    { value: "last_name", label: "Last Name" },
+    { value: "phone", label: "Phone" },
+]
+
+const FULFILLMENT_DATA_PATHS = [
+    { value: "id", label: "Fulfillment ID" },
+    { value: "tracking_numbers", label: "Tracking Numbers" },
+    { value: "provider_id", label: "Provider ID" },
+    // Parent order fields
     { value: "order.display_id", label: "Order ID" },
-    { value: "order.total", label: "Order Total" },
-    { value: "order.currency_code", label: "Currency Code" },
     { value: "order.email", label: "Order Email" },
-    { value: "order.shipping_address.first_name", label: "Shipping First Name" },
-    { value: "order.shipping_address.last_name", label: "Shipping Last Name" },
-    { value: "order.shipping_address.phone", label: "Shipping Phone" },
-    { value: "order.shipping_address.city", label: "Shipping City" },
-    { value: "order.billing_address.first_name", label: "Billing First Name" },
-    { value: "order.billing_address.last_name", label: "Billing Last Name" },
-    { value: "order.billing_address.phone", label: "Billing Phone" },
     { value: "order.customer.first_name", label: "Customer First Name" },
     { value: "order.customer.last_name", label: "Customer Last Name" },
-    { value: "order.customer.email", label: "Customer Email" },
-    { value: "order.customer.phone", label: "Customer Phone" },
 ]
+
+const RETURN_DATA_PATHS = [
+    { value: "id", label: "Return ID" },
+    { value: "status", label: "Return Status" },
+    // Parent order fields
+    { value: "order.display_id", label: "Order ID" },
+    { value: "order.email", label: "Order Email" },
+    { value: "order.customer.first_name", label: "Customer First Name" },
+    { value: "order.customer.last_name", label: "Customer Last Name" },
+]
+
+const CLAIM_EXCHANGE_DATA_PATHS = [
+    { value: "id", label: "ID" },
+    { value: "type", label: "Type" },
+    // Parent order fields
+    { value: "order.display_id", label: "Order ID" },
+    { value: "order.email", label: "Order Email" },
+    { value: "order.customer.first_name", label: "Customer First Name" },
+    { value: "order.customer.last_name", label: "Customer Last Name" },
+]
+
+function getDataPathsForEvent(eventName: string) {
+    if (eventName.startsWith("order.")) return ORDER_DATA_PATHS
+    if (eventName.startsWith("fulfillment.")) return FULFILLMENT_DATA_PATHS
+    if (eventName.startsWith("customer.")) return CUSTOMER_DATA_PATHS
+    if (eventName.startsWith("return.")) return RETURN_DATA_PATHS
+    if (eventName.startsWith("claim.") || eventName.startsWith("exchange.")) return CLAIM_EXCHANGE_DATA_PATHS
+    return ORDER_DATA_PATHS // fallback
+}
 
 type TemplateVar = { name: string; path: string }
 const EMPTY_VAR: TemplateVar = { name: "", path: "" }
@@ -188,6 +203,8 @@ function MappingsSection() {
     const [showForm, setShowForm] = useState(false)
     const [editingId, setEditingId] = useState<string | null>(null)
     const [templateVars, setTemplateVars] = useState<TemplateVar[]>([{ ...EMPTY_VAR }])
+    const [templates, setTemplates] = useState<any[]>([])
+    const [loadingTemplates, setLoadingTemplates] = useState(false)
     const [form, setForm] = useState({
         event_name: MEDUSA_EVENTS[0],
         template_name: "",
@@ -205,6 +222,26 @@ function MappingsSection() {
     }, [])
 
     useEffect(() => { loadMappings() }, [loadMappings])
+
+    // Fetch templates when form opens — only if not already loaded
+    useEffect(() => {
+        if (showForm && templates.length === 0) {
+            setLoadingTemplates(true)
+            api("/templates").then((data) => {
+                setTemplates(data.templates || [])
+                setLoadingTemplates(false)
+            }).catch(() => setLoadingTemplates(false))
+        }
+    }, [showForm])
+
+    const onTemplateSelect = (name: string) => {
+        const tpl = templates.find((t) => t.name === name)
+        setForm((prev) => ({
+            ...prev,
+            template_name: name,
+            language_code: tpl?.language || prev.language_code,
+        }))
+    }
 
     const resetForm = () => {
         setForm({ event_name: MEDUSA_EVENTS[0], template_name: "", language_code: "en_US", recipient_type: "billing_shipping", recipient_phone: "", active: true })
@@ -226,8 +263,9 @@ function MappingsSection() {
     const saveMapping = async () => {
         // Convert rows to { name: path } JSON
         const variables: Record<string, string> = {}
-        templateVars.forEach((v) => {
-            if (v.name.trim() && v.path.trim()) variables[v.name.trim()] = v.path.trim()
+        templateVars.forEach((v, i) => {
+            const name = v.name.trim() || String(i + 1)
+            if (v.path.trim()) variables[name] = v.path.trim()
         })
 
         const payload = { ...form, template_variables: variables }
@@ -251,8 +289,15 @@ function MappingsSection() {
     }
 
     const editMapping = (m: any) => {
-        // Convert JSON object back to rows
-        const vars = m.template_variables || {}
+        // Convert JSON object back to rows — handle both string and object
+        let vars: Record<string, string> = {}
+        if (m.template_variables) {
+            if (typeof m.template_variables === "string") {
+                try { vars = JSON.parse(m.template_variables) } catch { /* ignore */ }
+            } else {
+                vars = m.template_variables
+            }
+        }
         const rows: TemplateVar[] = Object.entries(vars).map(([name, path]) => ({ name, path: path as string }))
         setTemplateVars(rows.length > 0 ? rows : [{ ...EMPTY_VAR }])
         setForm({
@@ -304,22 +349,33 @@ function MappingsSection() {
                             </Text>
                         </div>
                         <div>
-                            <Label htmlFor="tpl-name">WhatsApp Template Name</Label>
-                            <Input
-                                id="tpl-name"
-                                placeholder="e.g. order_confirmation"
-                                value={form.template_name}
-                                onChange={(e) => setForm({ ...form, template_name: e.target.value })}
-                            />
-                        </div>
-                        <div>
-                            <Label htmlFor="tpl-lang">Language Code</Label>
-                            <Input
-                                id="tpl-lang"
-                                placeholder="en_US"
-                                value={form.language_code}
-                                onChange={(e) => setForm({ ...form, language_code: e.target.value })}
-                            />
+                            <Label htmlFor="tpl-name">WhatsApp Template</Label>
+                            {templates.length > 0 ? (
+                                <Select value={form.template_name} onValueChange={onTemplateSelect}>
+                                    <Select.Trigger>
+                                        <Select.Value placeholder={loadingTemplates ? "Loading..." : "Select a template"} />
+                                    </Select.Trigger>
+                                    <Select.Content>
+                                        {templates.map((t: any) => (
+                                            <Select.Item key={`${t.name}-${t.language}`} value={t.name}>
+                                                {t.name} ({t.language})
+                                            </Select.Item>
+                                        ))}
+                                    </Select.Content>
+                                </Select>
+                            ) : (
+                                <Input
+                                    id="tpl-name"
+                                    placeholder={loadingTemplates ? "Loading templates..." : "e.g. order_confirmation"}
+                                    value={form.template_name}
+                                    onChange={(e) => setForm({ ...form, template_name: e.target.value })}
+                                />
+                            )}
+                            {!loadingTemplates && templates.length === 0 && (
+                                <Text size="small" className="text-ui-fg-muted mt-1">
+                                    Set WHATSAPP_BUSINESS_ACCOUNT_ID env var to load templates
+                                </Text>
+                            )}
                         </div>
                         <div>
                             <Label htmlFor="recipient-type">Send To</Label>
@@ -383,7 +439,7 @@ function MappingsSection() {
                                     </div>
                                     <div className="flex-1">
                                         <Input
-                                            list="order-data-paths"
+                                            list="event-data-paths"
                                             placeholder="Select or type a data path..."
                                             value={v.path}
                                             onChange={(e) => updateVar(i, "path", e.target.value)}
@@ -399,8 +455,8 @@ function MappingsSection() {
                                 </div>
                             ))}
                         </div>
-                        <datalist id="order-data-paths">
-                            {ORDER_DATA_PATHS.map((p) => (
+                        <datalist id="event-data-paths">
+                            {getDataPathsForEvent(form.event_name).map((p) => (
                                 <option key={p.value} value={p.value} label={p.label} />
                             ))}
                         </datalist>
@@ -424,7 +480,6 @@ function MappingsSection() {
                             <Table.HeaderCell>Event</Table.HeaderCell>
                             <Table.HeaderCell>Template</Table.HeaderCell>
                             <Table.HeaderCell>Send To</Table.HeaderCell>
-                            <Table.HeaderCell>Language</Table.HeaderCell>
                             <Table.HeaderCell>Status</Table.HeaderCell>
                             <Table.HeaderCell className="text-right">Actions</Table.HeaderCell>
                         </Table.Row>
@@ -439,7 +494,7 @@ function MappingsSection() {
                                 <Table.Cell>
                                     <Text size="small">{recipientLabel(m.recipient_type, m.recipient_phone)}</Text>
                                 </Table.Cell>
-                                <Table.Cell>{m.language_code}</Table.Cell>
+
                                 <Table.Cell>
                                     <Badge color={m.active ? "green" : "grey"}>
                                         {m.active ? "Active" : "Inactive"}
@@ -464,32 +519,75 @@ function MappingsSection() {
     )
 }
 
-// ─── Test Message Section ─────────────────────────────────────
-function TestSection() {
+// ─── Manual Send Modal ─────────────────────────────────────────
+type ManualVar = { name: string; value: string }
+const EMPTY_MANUAL_VAR: ManualVar = { name: "", value: "" }
+const MAX_MANUAL_VARS = 10
+
+function ManualSendModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
     const [sending, setSending] = useState(false)
+    const [templates, setTemplates] = useState<any[]>([])
+    const [loadingTemplates, setLoadingTemplates] = useState(false)
+    const [manualVars, setManualVars] = useState<ManualVar[]>([{ ...EMPTY_MANUAL_VAR }])
     const [form, setForm] = useState({
         phone_number: "",
         template_name: "",
         language_code: "en_US",
-        template_variables: "{}",
     })
 
-    const sendTest = async () => {
+    const updateManualVar = (index: number, field: keyof ManualVar, value: string) => {
+        setManualVars((prev) => prev.map((v, i) => i === index ? { ...v, [field]: value } : v))
+    }
+    const addManualVar = () => {
+        if (manualVars.length < MAX_MANUAL_VARS) setManualVars((prev) => [...prev, { ...EMPTY_MANUAL_VAR }])
+    }
+    const removeManualVar = (index: number) => {
+        setManualVars((prev) => prev.length <= 1 ? [{ ...EMPTY_MANUAL_VAR }] : prev.filter((_, i) => i !== index))
+    }
+
+    // Fetch templates when modal opens
+    useEffect(() => {
+        if (open) {
+            setLoadingTemplates(true)
+            api("/templates").then((data) => {
+                setTemplates(data.templates || [])
+                setLoadingTemplates(false)
+            }).catch(() => setLoadingTemplates(false))
+        }
+    }, [open])
+
+    // When a template is selected, auto-fill its language code
+    const onTemplateSelect = (name: string) => {
+        setForm((prev) => {
+            const tpl = templates.find((t) => t.name === name)
+            return {
+                ...prev,
+                template_name: name,
+                language_code: tpl?.language || prev.language_code,
+            }
+        })
+    }
+
+    const sendMessage = async () => {
         if (!form.phone_number || !form.template_name) {
             toast.error("Phone number and template name are required")
             return
         }
         setSending(true)
-        let variables = {}
-        try { variables = JSON.parse(form.template_variables) } catch { /* ignore */ }
+        // Convert variable rows to { name: value } JSON
+        const variables: Record<string, string> = {}
+        manualVars.forEach((v, i) => {
+            const name = v.name.trim() || String(i + 1)
+            if (v.value.trim()) variables[name] = v.value.trim()
+        })
 
-        const result = await api("/test", {
+        const result = await api("/manual", {
             method: "POST",
             body: JSON.stringify({ ...form, template_variables: variables }),
         })
 
         if (result.success) {
-            toast.success("Test message sent!")
+            toast.success("Message sent!")
         } else {
             toast.error(`Failed: ${result.error?.error?.message || result.error || "Unknown error"}`)
         }
@@ -497,142 +595,142 @@ function TestSection() {
     }
 
     return (
-        <Container className="p-6">
-            <Heading level="h2" className="mb-4">Send Test Message</Heading>
-            <div className="grid grid-cols-2 gap-4">
-                <div>
-                    <Label htmlFor="test-phone">Phone Number (with country code)</Label>
-                    <Input
-                        id="test-phone"
-                        placeholder="e.g. 919876543210"
-                        value={form.phone_number}
-                        onChange={(e) => setForm({ ...form, phone_number: e.target.value })}
-                    />
-                </div>
-                <div>
-                    <Label htmlFor="test-tpl">Template Name</Label>
-                    <Input
-                        id="test-tpl"
-                        placeholder="e.g. hello_world"
-                        value={form.template_name}
-                        onChange={(e) => setForm({ ...form, template_name: e.target.value })}
-                    />
-                </div>
-                <div>
-                    <Label htmlFor="test-lang">Language Code</Label>
-                    <Input
-                        id="test-lang"
-                        placeholder="en_US"
-                        value={form.language_code}
-                        onChange={(e) => setForm({ ...form, language_code: e.target.value })}
-                    />
-                </div>
-                <div>
-                    <Label htmlFor="test-vars">Template Variables (JSON)</Label>
-                    <Input
-                        id="test-vars"
-                        placeholder='{"1": "John"}'
-                        value={form.template_variables}
-                        onChange={(e) => setForm({ ...form, template_variables: e.target.value })}
-                    />
-                </div>
-            </div>
-            <div className="mt-4 flex justify-end">
-                <Button onClick={sendTest} isLoading={sending}>
-                    Send Test Message
-                </Button>
-            </div>
-        </Container>
-    )
-}
-
-// ─── Message Logs Section ─────────────────────────────────────
-function LogsSection() {
-    const [logs, setLogs] = useState<any[]>([])
-    const [loading, setLoading] = useState(true)
-
-    const loadLogs = useCallback(async () => {
-        setLoading(true)
-        const data = await api("/logs?limit=20")
-        setLogs(data.logs || [])
-        setLoading(false)
-    }, [])
-
-    useEffect(() => { loadLogs() }, [loadLogs])
-
-    const statusColor = (status: string) => {
-        switch (status) {
-            case "sent": return "green"
-            case "delivered": return "green"
-            case "failed": return "red"
-            default: return "grey"
-        }
-    }
-
-    return (
-        <Container className="p-6">
-            <div className="flex items-center justify-between mb-4">
-                <Heading level="h2">Message Logs</Heading>
-                <Button variant="secondary" size="small" onClick={loadLogs}>
-                    Refresh
-                </Button>
-            </div>
-
-            {loading ? (
-                <Text>Loading logs...</Text>
-            ) : logs.length === 0 ? (
-                <Text className="text-ui-fg-muted">No messages sent yet.</Text>
-            ) : (
-                <Table>
-                    <Table.Header>
-                        <Table.Row>
-                            <Table.HeaderCell>Event</Table.HeaderCell>
-                            <Table.HeaderCell>Template</Table.HeaderCell>
-                            <Table.HeaderCell>Recipient</Table.HeaderCell>
-                            <Table.HeaderCell>Status</Table.HeaderCell>
-                            <Table.HeaderCell>Time</Table.HeaderCell>
-                        </Table.Row>
-                    </Table.Header>
-                    <Table.Body>
-                        {logs.map((log: any) => (
-                            <Table.Row key={log.id}>
-                                <Table.Cell>
-                                    <Badge color="blue">{log.event_name}</Badge>
-                                </Table.Cell>
-                                <Table.Cell>{log.template_name}</Table.Cell>
-                                <Table.Cell>{log.recipient_phone}</Table.Cell>
-                                <Table.Cell>
-                                    <Badge color={statusColor(log.status)}>
-                                        {log.status}
-                                    </Badge>
-                                </Table.Cell>
-                                <Table.Cell>
-                                    <Text size="small">
-                                        {new Date(log.created_at).toLocaleString()}
+        <FocusModal open={open} onOpenChange={onOpenChange}>
+            <FocusModal.Content>
+                <FocusModal.Header>
+                    <FocusModal.Title>Send Message</FocusModal.Title>
+                </FocusModal.Header>
+                <FocusModal.Body className="p-6">
+                    <div className="flex flex-col gap-6 max-w-2xl mx-auto">
+                        <Text className="text-ui-fg-muted">
+                            Send a WhatsApp template message to a phone number.
+                        </Text>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <Label htmlFor="manual-phone">Phone Number (with country code)</Label>
+                                <Input
+                                    id="manual-phone"
+                                    placeholder="e.g. 919876543210"
+                                    value={form.phone_number}
+                                    onChange={(e) => setForm({ ...form, phone_number: e.target.value })}
+                                />
+                            </div>
+                            <div>
+                                <Label htmlFor="manual-tpl">Template Name</Label>
+                                {templates.length > 0 ? (
+                                    <Select value={form.template_name} onValueChange={onTemplateSelect}>
+                                        <Select.Trigger>
+                                            <Select.Value placeholder={loadingTemplates ? "Loading..." : "Select a template"} />
+                                        </Select.Trigger>
+                                        <Select.Content>
+                                            {templates.map((t: any) => (
+                                                <Select.Item key={`${t.name}-${t.language}`} value={t.name}>
+                                                    {t.name} ({t.language})
+                                                </Select.Item>
+                                            ))}
+                                        </Select.Content>
+                                    </Select>
+                                ) : (
+                                    <Input
+                                        id="manual-tpl"
+                                        placeholder={loadingTemplates ? "Loading templates..." : "e.g. hello_world"}
+                                        value={form.template_name}
+                                        onChange={(e) => setForm({ ...form, template_name: e.target.value })}
+                                    />
+                                )}
+                                {!loadingTemplates && templates.length === 0 && (
+                                    <Text size="small" className="text-ui-fg-muted mt-1">
+                                        Set WHATSAPP_BUSINESS_ACCOUNT_ID env var to load templates
                                     </Text>
-                                </Table.Cell>
-                            </Table.Row>
-                        ))}
-                    </Table.Body>
-                </Table>
-            )}
-        </Container>
+                                )}
+                            </div>
+                        </div>
+                        <div className="mt-2">
+                            <div className="flex items-center justify-between mb-2">
+                                <Label>Template Variables</Label>
+                                {manualVars.length < MAX_MANUAL_VARS && (
+                                    <Button variant="secondary" size="small" onClick={addManualVar}>
+                                        + Add Variable
+                                    </Button>
+                                )}
+                            </div>
+                            <Text size="small" className="text-ui-fg-muted mb-2">
+                                Add template variable positions (e.g. 1, 2, 3) and their values.
+                            </Text>
+                            <div className="flex flex-col gap-2">
+                                {manualVars.map((v, i) => (
+                                    <div key={i} className="flex items-center gap-2">
+                                        <div className="w-24 flex-shrink-0">
+                                            <Input
+                                                placeholder={`${i + 1}`}
+                                                value={v.name}
+                                                onChange={(e) => updateManualVar(i, "name", e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="flex-1">
+                                            <Input
+                                                placeholder="Variable value..."
+                                                value={v.value}
+                                                onChange={(e) => updateManualVar(i, "value", e.target.value)}
+                                            />
+                                        </div>
+                                        <Button
+                                            variant="secondary"
+                                            size="small"
+                                            onClick={() => removeManualVar(i)}
+                                        >
+                                            ✕
+                                        </Button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="flex justify-end">
+                            <Button onClick={sendMessage} isLoading={sending}>
+                                Send Message
+                            </Button>
+                        </div>
+                    </div>
+                </FocusModal.Body>
+            </FocusModal.Content>
+        </FocusModal>
     )
 }
 
 // ─── Main Page ─────────────────────────────────────────────────
 const WhatsAppPage = () => {
+    const [testOpen, setTestOpen] = useState(false)
+    const navigate = useNavigate()
+
     return (
         <div className="flex flex-col gap-4">
             <Toaster />
-            <div className="flex items-center gap-3">
-                <ChatBubbleLeftRight />
-                <Heading level="h1">WhatsApp Business</Heading>
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <ChatBubbleLeftRight />
+                    <Heading level="h1">WhatsApp Business</Heading>
+                </div>
+                <div className="flex items-center gap-2">
+                    <Button variant="secondary" onClick={() => setTestOpen(true)}>
+                        Send Message
+                    </Button>
+                    <DropdownMenu>
+                        <DropdownMenu.Trigger asChild>
+                            <IconButton variant="transparent">
+                                <EllipsisHorizontal />
+                            </IconButton>
+                        </DropdownMenu.Trigger>
+                        <DropdownMenu.Content>
+                            <DropdownMenu.Item onClick={() => navigate("/whatsapp/logs")}>
+                                Message Logs
+                            </DropdownMenu.Item>
+                        </DropdownMenu.Content>
+                    </DropdownMenu>
+                </div>
             </div>
             <ConfigSection />
             <MappingsSection />
-            <TestSection />
-            <LogsSection />
+            <ManualSendModal open={testOpen} onOpenChange={setTestOpen} />
         </div>
     )
 }
