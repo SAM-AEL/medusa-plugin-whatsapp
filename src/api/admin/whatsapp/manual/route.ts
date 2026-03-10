@@ -1,5 +1,10 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import {
+    createWhatsappMessageLog,
+    getWhatsappConfig,
+    sendWhatsappTemplateMessage,
+} from "../../../../shared/whatsapp-runtime"
 
 const WHATSAPP_MODULE = "whatsapp"
 
@@ -14,73 +19,44 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         return res.status(400).json({ message: "phone_number and template_name are required" })
     }
 
-    // Get the WhatsApp config
-    const [configs] = await (whatsappModule as any).listAndCountWhatsappConfigs(
-        {},
-        { take: 1 }
-    )
+    const whatsappConfig = await getWhatsappConfig(whatsappModule)
+    const config = whatsappConfig.config
 
-    const config = configs?.[0]
-
-    // Resolve credentials: DB config → env vars
-    const phoneNumberId = config?.phone_number_id || process.env.WHATSAPP_PHONE_NUMBER_ID
-    const accessToken = config?.access_token || process.env.WHATSAPP_ACCESS_TOKEN
-    const apiVersion = config?.api_version || process.env.WHATSAPP_API_VERSION || "v25.0"
-
-    if (!phoneNumberId || !accessToken) {
+    if (!whatsappConfig.configured) {
         return res.status(400).json({
             message: "WhatsApp is not configured. Set phone_number_id and access_token in config or env vars (WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_ACCESS_TOKEN).",
         })
     }
 
-    // Build the request payload
-    const components: any[] = []
-    if (template_variables && Object.keys(template_variables).length > 0) {
-        const bodyParams = Object.values(template_variables).map((value: any) => ({
-            type: "text",
+    const bodyParams = template_variables && Object.keys(template_variables).length > 0
+        ? Object.values(template_variables).map((value: any) => ({
+            type: "text" as const,
             text: String(value),
         }))
-        components.push({
-            type: "body",
-            parameters: bodyParams,
-        })
-    }
+        : []
 
-    const requestPayload = {
-        messaging_product: "whatsapp",
-        recipient_type: "individual",
-        to: phone_number,
-        type: "template",
-        template: {
-            name: template_name,
-            language: {
-                code: language_code || config?.default_language_code || "en_US",
-            },
-            ...(components.length > 0 ? { components } : {}),
-        },
-    }
+    let requestPayload: Record<string, any> = {}
 
     try {
-        const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`
+        const { url, requestPayload: payload, response, responseData } =
+            await sendWhatsappTemplateMessage({
+                phoneNumberId: whatsappConfig.phoneNumberId!,
+                accessToken: whatsappConfig.accessToken!,
+                apiVersion: whatsappConfig.apiVersion,
+                recipientPhone: phone_number,
+                templateName: template_name,
+                languageCode: language_code || config?.default_language_code || "en_US",
+                bodyParameters: bodyParams,
+            })
+        requestPayload = payload
 
         if (process.env.NODE_ENV === "development") {
             console.log("[WhatsApp Dev] Sending test message to:", url)
             console.log("[WhatsApp Dev] Request payload:", JSON.stringify(requestPayload, null, 2))
         }
 
-        const response = await fetch(url, {
-            method: "POST",
-            headers: {
-                Authorization: `Bearer ${accessToken}`,
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify(requestPayload),
-        })
-
-        const responseData = await response.json()
-
         // Log the message
-        const messageLog = await (whatsappModule as any).createWhatsappMessageLogs({
+        const messageLog = await createWhatsappMessageLog(req.scope, {
             event_name: "test_message",
             recipient_phone: phone_number,
             template_name,
@@ -101,7 +77,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     } catch (error: any) {
         logger.error(`[WhatsApp] Test message error: ${error.message}`)
 
-        await (whatsappModule as any).createWhatsappMessageLogs({
+        await createWhatsappMessageLog(req.scope, {
             event_name: "test_message",
             recipient_phone: phone_number,
             template_name,

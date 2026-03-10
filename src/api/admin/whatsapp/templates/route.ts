@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { getWhatsappConfig } from "../../../../shared/whatsapp-runtime"
 
 const WHATSAPP_MODULE = "whatsapp"
 
@@ -11,9 +12,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         { take: 1 }
     )
 
-    const config = configs?.[0]
-    const accessToken = config?.access_token || process.env.WHATSAPP_ACCESS_TOKEN
-    const apiVersion = config?.api_version || process.env.WHATSAPP_API_VERSION || "v25.0"
+    const whatsappConfig = await getWhatsappConfig(whatsappModule)
+    const accessToken = whatsappConfig.accessToken
+    const apiVersion = whatsappConfig.apiVersion
     const wabaId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID
 
     if (!accessToken || !wabaId) {

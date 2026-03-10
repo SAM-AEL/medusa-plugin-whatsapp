@@ -22,8 +22,9 @@ Map any Medusa event to a WhatsApp template, configure recipient logic, and mana
 - 🧪 **Test Messages** — Send test template messages directly from the admin UI before going live
 - 📦 **Template Variables** — Map dynamic order data (order ID, customer name, total, etc.) to WhatsApp template body parameters
 - 📞 **Smart Recipient Resolution** — Automatically resolves phone numbers from billing address, shipping address, or customer profile
-- 🔑 **Flexible Configuration** — Configure via the admin UI, environment variables, or both (DB config takes priority)
+- 🔑 **Flexible Configuration** — Configure phone number and behavior in the admin UI while keeping the access token in environment variables
 - 🏗️ **Zero Dependencies** — Uses native `fetch` — no external HTTP libraries needed
+- ⚙️ **Workflow-Based Delivery** — Event subscribers trigger a Medusa workflow so delivery can run cleanly on worker instances in production
 
 ---
 
@@ -86,7 +87,7 @@ WHATSAPP_ACCESS_TOKEN=your_access_token
 WHATSAPP_API_VERSION=v25.0         # optional, defaults to v25.0
 ```
 
-> **Note:** You can also configure these through the admin dashboard. Database-stored config takes priority over environment variables.
+> **Note:** The access token is read from `WHATSAPP_ACCESS_TOKEN` only. The admin dashboard manages non-secret configuration such as phone number ID, default language, and active state.
 
 ### 3. Run migrations
 
@@ -101,6 +102,20 @@ npx medusa develop
 ```
 
 Navigate to **WhatsApp** in the admin sidebar to configure and start mapping events.
+
+### Production Deployment
+
+The plugin works in shared or single-instance deployments, but a dedicated Medusa worker is recommended in production.
+
+Recommended setup:
+
+1. API instance:
+   - serves HTTP traffic
+   - publishes Medusa events
+2. Worker instance:
+   - executes subscribers, workflows, and WhatsApp delivery
+
+In shared mode, the workflow still runs in the same Medusa process, so the plugin works without extra infrastructure.
 
 ---
 
@@ -182,7 +197,7 @@ The plugin exposes the following admin API routes (all require authentication):
 ## How It Works
 
 1. A Medusa event fires (e.g., `order.placed`)
-2. The subscriber checks if a WhatsApp config is active (DB → env vars fallback)
+2. The subscriber triggers a workflow for the event
 3. It looks up all active event mappings for that event
 4. For each mapping, it resolves the recipient phone number based on the `recipient_type`
 5. It builds the WhatsApp Cloud API payload with template name, language, and variable parameters
@@ -197,7 +212,7 @@ The plugin creates three tables:
 
 | Table | Purpose |
 |---|---|
-| `whatsapp_config` | Stores API credentials and settings (phone number ID, access token, API version, language, active toggle) |
+| `whatsapp_config` | Stores non-secret settings (phone number ID, API version, language, active toggle) |
 | `whatsapp_event_mapping` | Maps events to templates with recipient type, language, and variable configuration |
 | `whatsapp_message_log` | Logs every message attempt with status, payloads, and WhatsApp message ID |
 
@@ -211,7 +226,7 @@ The plugin creates three tables:
 | `WHATSAPP_ACCESS_TOKEN` | Yes* | — | Your WhatsApp Cloud API access token |
 | `WHATSAPP_API_VERSION` | No | `v25.0` | Facebook Graph API version |
 
-\* *Not required if configured through the admin dashboard.*
+\* *Phone number ID can come from the admin dashboard or env. Access token should come from env.*
 
 ---
 

@@ -5,23 +5,7 @@ import { ChatBubbleLeftRight, EllipsisHorizontal } from "@medusajs/icons"
 import { Container, Heading, Button, Input, Label, Switch, Table, Badge, Text, Select, Toaster, toast, FocusModal, DropdownMenu, IconButton } from "@medusajs/ui"
 import { useState, useEffect, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
-
-const MEDUSA_EVENTS = [
-    "order.placed",
-    "order.completed",
-    "order.canceled",
-    "order.updated",
-    "order.fulfillment_created",
-    "fulfillment.created",
-    "fulfillment.shipment_created",
-    "fulfillment.delivery_created",
-    "customer.created",
-    "customer.updated",
-    "return.created",
-    "return.received",
-    "claim.created",
-    "exchange.created",
-]
+import { getSuggestedDataPathsForEvent, WHATSAPP_EVENTS } from "../../../shared/whatsapp-fields"
 
 const BACKEND_URL = __BACKEND_URL__ ?? ""
 
@@ -125,72 +109,15 @@ const RECIPIENT_OPTIONS = [
     { value: "custom", label: "Custom phone number" },
 ]
 
-const ORDER_DATA_PATHS = [
-    { value: "display_id", label: "Order ID" },
-    { value: "status", label: "Order Status" },
-    { value: "total", label: "Order Total" },
-    { value: "subtotal", label: "Subtotal" },
-    { value: "currency_code", label: "Currency Code" },
-    { value: "email", label: "Order Email" },
-    { value: "shipping_address.first_name", label: "Shipping First Name" },
-    { value: "shipping_address.last_name", label: "Shipping Last Name" },
-    { value: "shipping_address.phone", label: "Shipping Phone" },
-    { value: "shipping_address.city", label: "Shipping City" },
-    { value: "billing_address.first_name", label: "Billing First Name" },
-    { value: "billing_address.last_name", label: "Billing Last Name" },
-    { value: "billing_address.phone", label: "Billing Phone" },
-    { value: "customer.first_name", label: "Customer First Name" },
-    { value: "customer.last_name", label: "Customer Last Name" },
-    { value: "customer.email", label: "Customer Email" },
-    { value: "customer.phone", label: "Customer Phone" },
-]
-
-const CUSTOMER_DATA_PATHS = [
-    { value: "id", label: "Customer ID" },
-    { value: "email", label: "Email" },
-    { value: "first_name", label: "First Name" },
-    { value: "last_name", label: "Last Name" },
-    { value: "phone", label: "Phone" },
-]
-
-const FULFILLMENT_DATA_PATHS = [
-    { value: "id", label: "Fulfillment ID" },
-    { value: "tracking_numbers", label: "Tracking Numbers" },
-    { value: "provider_id", label: "Provider ID" },
-    // Parent order fields
-    { value: "order.display_id", label: "Order ID" },
-    { value: "order.email", label: "Order Email" },
-    { value: "order.customer.first_name", label: "Customer First Name" },
-    { value: "order.customer.last_name", label: "Customer Last Name" },
-]
-
-const RETURN_DATA_PATHS = [
-    { value: "id", label: "Return ID" },
-    { value: "status", label: "Return Status" },
-    // Parent order fields
-    { value: "order.display_id", label: "Order ID" },
-    { value: "order.email", label: "Order Email" },
-    { value: "order.customer.first_name", label: "Customer First Name" },
-    { value: "order.customer.last_name", label: "Customer Last Name" },
-]
-
-const CLAIM_EXCHANGE_DATA_PATHS = [
-    { value: "id", label: "ID" },
-    { value: "type", label: "Type" },
-    // Parent order fields
-    { value: "order.display_id", label: "Order ID" },
-    { value: "order.email", label: "Order Email" },
-    { value: "order.customer.first_name", label: "Customer First Name" },
-    { value: "order.customer.last_name", label: "Customer Last Name" },
-]
-
 function getDataPathsForEvent(eventName: string) {
-    if (eventName.startsWith("order.")) return ORDER_DATA_PATHS
-    if (eventName.startsWith("fulfillment.")) return FULFILLMENT_DATA_PATHS
-    if (eventName.startsWith("customer.")) return CUSTOMER_DATA_PATHS
-    if (eventName.startsWith("return.")) return RETURN_DATA_PATHS
-    if (eventName.startsWith("claim.") || eventName.startsWith("exchange.")) return CLAIM_EXCHANGE_DATA_PATHS
-    return ORDER_DATA_PATHS // fallback
+    return getSuggestedDataPathsForEvent(eventName).map((value) => ({
+        value,
+        label: value
+            .split(".")
+            .map((part) => part.replace(/_/g, " "))
+            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(" -> "),
+    }))
 }
 
 type TemplateVar = { name: string; path: string }
@@ -206,7 +133,7 @@ function MappingsSection() {
     const [templates, setTemplates] = useState<any[]>([])
     const [loadingTemplates, setLoadingTemplates] = useState(false)
     const [form, setForm] = useState({
-        event_name: MEDUSA_EVENTS[0],
+        event_name: WHATSAPP_EVENTS[0],
         template_name: "",
         language_code: "en_US",
         recipient_type: "billing_shipping",
@@ -244,7 +171,7 @@ function MappingsSection() {
     }
 
     const resetForm = () => {
-        setForm({ event_name: MEDUSA_EVENTS[0], template_name: "", language_code: "en_US", recipient_type: "billing_shipping", recipient_phone: "", active: true })
+        setForm({ event_name: WHATSAPP_EVENTS[0], template_name: "", language_code: "en_US", recipient_type: "billing_shipping", recipient_phone: "", active: true })
         setTemplateVars([{ ...EMPTY_VAR }])
         setEditingId(null)
         setShowForm(false)
@@ -340,7 +267,7 @@ function MappingsSection() {
                                 onChange={(e) => setForm({ ...form, event_name: e.target.value })}
                             />
                             <datalist id="medusa-events-list">
-                                {MEDUSA_EVENTS.map((e) => (
+                                {WHATSAPP_EVENTS.map((e) => (
                                     <option key={e} value={e} />
                                 ))}
                             </datalist>

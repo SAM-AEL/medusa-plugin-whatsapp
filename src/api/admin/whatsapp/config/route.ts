@@ -55,7 +55,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         // Create new config
         config = await (whatsappModule as any).createWhatsappConfigs({
             phone_number_id: phone_number_id || process.env.WHATSAPP_PHONE_NUMBER_ID || "",
-            access_token: process.env.WHATSAPP_ACCESS_TOKEN || "",
             api_version: api_version || process.env.WHATSAPP_API_VERSION || "v25.0",
             default_language_code: default_language_code || "en_US",
             active: active !== undefined ? active : true,
