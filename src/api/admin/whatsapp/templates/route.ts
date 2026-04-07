@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { getWhatsappConfig } from "../../../../shared/whatsapp-runtime"
+import { fail, ok } from "../../../../shared/http"
 
 const WHATSAPP_MODULE = "whatsapp"
 
@@ -18,7 +19,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const wabaId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID
 
     if (!accessToken || !wabaId) {
-        return res.json({
+        return ok(res, {
             templates: [],
             message: !wabaId
                 ? "Set WHATSAPP_BUSINESS_ACCOUNT_ID env var to fetch templates."
@@ -42,9 +43,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         const data = await response.json()
 
         if (!response.ok) {
-            return res.status(400).json({
+            return fail(res, 400, "TEMPLATE_FETCH_FAILED", data?.error?.message || "Failed to fetch templates", {
                 templates: [],
-                error: data?.error?.message || "Failed to fetch templates",
             })
         }
 
@@ -58,11 +58,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
             components: t.components,
         }))
 
-        res.json({ templates })
+        return ok(res, { templates })
     } catch (error: any) {
-        res.status(500).json({
-            templates: [],
-            error: error.message,
-        })
+        return fail(res, 500, "TEMPLATE_FETCH_FAILED", error.message, { templates: [] })
     }
 }

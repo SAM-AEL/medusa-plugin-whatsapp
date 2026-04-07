@@ -8,6 +8,8 @@ import {
     resolvePhoneNumber,
     sendWhatsappTemplateMessage,
 } from "../../shared/whatsapp-runtime"
+import { isLikelyPhone } from "../../shared/http"
+import { redactSensitiveObject } from "../../shared/log-policy"
 
 const WHATSAPP_MODULE = "whatsapp"
 
@@ -56,8 +58,18 @@ export const sendEventWhatsappStep = createStep<
         let sent = 0
         let failed = 0
         let skipped = 0
+        const concurrency = Math.max(
+            1,
+            Math.min(10, Number(process.env.WHATSAPP_SEND_CONCURRENCY || 2))
+        )
+        let index = 0
 
-        for (const mapping of mappings) {
+        const runNext = async (): Promise<void> => {
+            if (index >= mappings.length) {
+                return
+            }
+
+            const mapping = mappings[index++]
             const recipientPhone = await resolvePhoneNumber(
                 input.event_data,
                 input.event_name,
@@ -71,7 +83,13 @@ export const sendEventWhatsappStep = createStep<
                 logger.warn(
                     `[WhatsApp] No phone number found for event ${input.event_name} (recipient_type: ${mapping.recipient_type})`
                 )
-                continue
+                return runNext()
+            }
+
+            if (!isLikelyPhone(recipientPhone)) {
+                skipped += 1
+                logger.warn(`[WhatsApp] Invalid recipient phone for event ${input.event_name}`)
+                return runNext()
             }
 
             let templateVars: Record<string, string> = {}
@@ -123,9 +141,9 @@ export const sendEventWhatsappStep = createStep<
                     template_name: mapping.template_name,
                     status: result.response.ok ? "sent" : "failed",
                     wa_message_id: result.responseData?.messages?.[0]?.id || null,
-                    error_message: result.response.ok ? null : JSON.stringify(result.responseData?.error || result.responseData),
-                    request_payload: result.requestPayload,
-                    response_payload: result.responseData,
+                    error_message: result.response.ok ? null : JSON.stringify(redactSensitiveObject(result.responseData?.error || result.responseData)),
+                    request_payload: redactSensitiveObject(result.requestPayload),
+                    response_payload: redactSensitiveObject(result.responseData),
                 })
 
                 if (result.response.ok) {
@@ -135,12 +153,7 @@ export const sendEventWhatsappStep = createStep<
                     )
                 } else {
                     failed += 1
-                    logger.error(
-                        `[WhatsApp] Failed to send "${mapping.template_name}": ${JSON.stringify(result.responseData)}`
-                    )
-                    throw new Error(
-                        result.responseData?.error?.message || "WhatsApp Cloud API request failed"
-                    )
+                    logger.error(`[WhatsApp] Failed to send "${mapping.template_name}"`)
                 }
             } catch (err: any) {
                 failed += 1
@@ -151,12 +164,17 @@ export const sendEventWhatsappStep = createStep<
                     template_name: mapping.template_name,
                     status: "failed",
                     error_message: err.message,
-                    request_payload: requestPayload,
-                    response_payload: responsePayload,
+                    request_payload: redactSensitiveObject(requestPayload),
+                    response_payload: redactSensitiveObject(responsePayload),
                 })
-                throw err
+            } finally {
+                await runNext()
             }
         }
+
+        await Promise.all(
+            Array.from({ length: Math.min(concurrency, mappings.length) }, () => runNext())
+        )
 
         return new StepResponse({ sent, failed, skipped }, undefined)
     }

@@ -5,6 +5,8 @@ import {
     getWhatsappConfig,
     sendWhatsappTemplateMessage,
 } from "../../../../shared/whatsapp-runtime"
+import { fail, isLikelyPhone, normalizeTemplateVariables, ok } from "../../../../shared/http"
+import { redactSensitiveObject } from "../../../../shared/log-policy"
 
 const WHATSAPP_MODULE = "whatsapp"
 
@@ -16,20 +18,28 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const { phone_number, template_name, language_code, template_variables } = body
 
     if (!phone_number || !template_name) {
-        return res.status(400).json({ message: "phone_number and template_name are required" })
+        return fail(res, 400, "INVALID_PAYLOAD", "phone_number and template_name are required")
+    }
+
+    if (!isLikelyPhone(phone_number)) {
+        return fail(res, 400, "INVALID_RECIPIENT", "phone_number must be a valid international phone number")
     }
 
     const whatsappConfig = await getWhatsappConfig(whatsappModule)
     const config = whatsappConfig.config
 
     if (!whatsappConfig.configured) {
-        return res.status(400).json({
-            message: "WhatsApp is not configured. Set phone_number_id and access_token in config or env vars (WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_ACCESS_TOKEN).",
-        })
+        return fail(
+            res,
+            400,
+            "WHATSAPP_NOT_CONFIGURED",
+            "WhatsApp is not configured. Set WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN."
+        )
     }
 
-    const bodyParams = template_variables && Object.keys(template_variables).length > 0
-        ? Object.values(template_variables).map((value: any) => ({
+    const normalizedVars = normalizeTemplateVariables(template_variables)
+    const bodyParams = Object.keys(normalizedVars).length > 0
+        ? Object.values(normalizedVars).map((value: any) => ({
             type: "text" as const,
             text: String(value),
         }))
@@ -62,17 +72,20 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
             template_name,
             status: response.ok ? "sent" : "failed",
             wa_message_id: responseData?.messages?.[0]?.id || null,
-            error_message: response.ok ? null : JSON.stringify(responseData?.error || responseData),
-            request_payload: requestPayload,
-            response_payload: responseData,
+            error_message: response.ok ? null : JSON.stringify(redactSensitiveObject(responseData?.error || responseData)),
+            request_payload: redactSensitiveObject(requestPayload),
+            response_payload: redactSensitiveObject(responseData),
         })
 
         if (response.ok) {
             logger.info(`[WhatsApp] Test message sent to ${phone_number} using template ${template_name}`)
-            res.json({ success: true, log: messageLog, response: responseData })
+            return ok(res, { log: messageLog, response: redactSensitiveObject(responseData) })
         } else {
-            logger.error(`[WhatsApp] Test message failed: ${JSON.stringify(responseData)}`)
-            res.status(400).json({ success: false, log: messageLog, error: responseData })
+            logger.error(`[WhatsApp] Test message failed`)
+            return fail(res, 400, "SEND_FAILED", "WhatsApp test message failed", {
+                log: messageLog,
+                error: redactSensitiveObject(responseData),
+            })
         }
     } catch (error: any) {
         logger.error(`[WhatsApp] Test message error: ${error.message}`)
@@ -83,10 +96,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
             template_name,
             status: "failed",
             error_message: error.message,
-            request_payload: requestPayload,
+            request_payload: redactSensitiveObject(requestPayload),
             response_payload: {},
         })
 
-        res.status(500).json({ success: false, error: error.message })
+        return fail(res, 500, "SEND_FAILED", error.message)
     }
 }

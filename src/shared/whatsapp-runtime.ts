@@ -7,6 +7,8 @@ import {
 } from "./whatsapp-fields"
 
 const WHATSAPP_MODULE = "whatsapp"
+const WHATSAPP_API_TIMEOUT_MS = Number(process.env.WHATSAPP_API_TIMEOUT_MS || 15000)
+let warnedAboutLegacyToken = false
 
 export function resolveDataPath(data: any, path: string): any {
     return path.split(".").reduce((obj, key) => obj?.[key], data)
@@ -23,6 +25,16 @@ export async function getWhatsappConfig(whatsappModule: any) {
     const accessToken = process.env.WHATSAPP_ACCESS_TOKEN
     const apiVersion = config?.api_version || process.env.WHATSAPP_API_VERSION || "v25.0"
     const defaultLanguageCode = config?.default_language_code || "en_US"
+
+    if (!accessToken && config && !warnedAboutLegacyToken) {
+        warnedAboutLegacyToken = true
+        // Security hardening: token persistence in DB is deprecated and no longer supported.
+        // Keep warning one-time to avoid noisy logs while guiding upgrade.
+        // eslint-disable-next-line no-console
+        console.warn(
+            "[WhatsApp] WHATSAPP_ACCESS_TOKEN is not set. Stored DB tokens are deprecated; configure env secret instead."
+        )
+    }
 
     return {
         config,
@@ -224,14 +236,26 @@ export async function sendWhatsappTemplateMessage({
 
     const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`
 
-    const response = await fetch(url, {
-        method: "POST",
-        headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestPayload),
-    })
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), WHATSAPP_API_TIMEOUT_MS)
+    let response: Response | null = null
+    try {
+        response = await fetch(url, {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "Content-Type": "application/json",
+            },
+            signal: controller.signal,
+            body: JSON.stringify(requestPayload),
+        })
+    } finally {
+        clearTimeout(timeout)
+    }
+
+    if (!response) {
+        throw new Error("WhatsApp request failed before response")
+    }
 
     const responseData = await response.json()
 

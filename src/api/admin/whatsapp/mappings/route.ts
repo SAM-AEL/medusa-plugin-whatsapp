@@ -1,20 +1,28 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import {
+    fail,
+    isLikelyPhone,
+    normalizeTemplateVariables,
+    ok,
+    parsePagination,
+} from "../../../../shared/http"
 
 const WHATSAPP_MODULE = "whatsapp"
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const whatsappModule = req.scope.resolve(WHATSAPP_MODULE)
+    const { limit, offset } = parsePagination(req.query as Record<string, unknown>)
 
     const [mappings, count] = await (whatsappModule as any).listAndCountWhatsappEventMappings(
         {},
         {
-            take: Number(req.query.limit) || 50,
-            skip: Number(req.query.offset) || 0,
+            take: limit,
+            skip: offset,
             order: { created_at: "DESC" },
         }
     )
 
-    res.json({ mappings, count })
+    return ok(res, { mappings, count })
 }
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
@@ -24,18 +32,22 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const { event_name, template_name, language_code, template_variables, active, recipient_type, recipient_phone } = body
 
     if (!event_name || !template_name) {
-        return res.status(400).json({ message: "event_name and template_name are required" })
+        return fail(res, 400, "INVALID_PAYLOAD", "event_name and template_name are required")
+    }
+
+    if (recipient_type === "custom" && !isLikelyPhone(recipient_phone)) {
+        return fail(res, 400, "INVALID_RECIPIENT", "recipient_phone is required and must be valid when recipient_type is custom")
     }
 
     const mapping = await (whatsappModule as any).createWhatsappEventMappings({
         event_name,
         template_name,
         language_code: language_code || "en_US",
-        template_variables: template_variables || {},
+        template_variables: normalizeTemplateVariables(template_variables),
         recipient_type: recipient_type || "billing_shipping",
         recipient_phone: recipient_type === "custom" ? recipient_phone : null,
         active: active !== undefined ? active : true,
     })
 
-    res.status(201).json({ mapping })
+    return ok(res, { mapping }, 201)
 }

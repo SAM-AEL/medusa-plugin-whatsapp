@@ -1,4 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
+import { fail, ok } from "../../../../shared/http"
 
 const WHATSAPP_MODULE = "whatsapp"
 
@@ -16,21 +17,29 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
 
     if (configs.length === 0) {
-        return res.json({
+        return ok(res, {
             config: null,
             ...envHints,
         })
     }
 
-    // Strip access_token from response — it should only be in env vars
-    const { access_token, ...config } = configs[0]
+    const config = configs[0]
 
-    res.json({ config, ...envHints })
+    return ok(res, { config, ...envHints })
 }
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const whatsappModule = req.scope.resolve(WHATSAPP_MODULE)
     const body = req.body as Record<string, any>
+
+    if ("access_token" in body) {
+        return fail(
+            res,
+            400,
+            "INVALID_PAYLOAD",
+            "access_token must not be sent in API payload. Use WHATSAPP_ACCESS_TOKEN env secret."
+        )
+    }
 
     const { phone_number_id, api_version, default_language_code, active } = body
 
@@ -60,9 +69,5 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
             active: active !== undefined ? active : true,
         })
     }
-
-    // Strip access_token from response
-    const { access_token: _token, ...responseConfig } = config
-
-    res.json({ config: responseConfig })
+    return ok(res, { config })
 }
