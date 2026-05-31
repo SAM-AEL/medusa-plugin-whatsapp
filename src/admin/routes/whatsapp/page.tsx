@@ -7,7 +7,7 @@ import { useState, useEffect, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import { getSuggestedDataPathsForEvent, WHATSAPP_EVENTS } from "../../../shared/whatsapp-fields"
 
-const BACKEND_URL = __BACKEND_URL__ ?? ""
+const BACKEND_URL = (__BACKEND_URL__ ?? "").replace(/\/+$/, "")
 
 async function api(path: string, options?: RequestInit) {
     const res = await fetch(`${BACKEND_URL}/admin/whatsapp${path}`, {

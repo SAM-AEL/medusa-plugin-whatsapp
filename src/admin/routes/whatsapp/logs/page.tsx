@@ -5,7 +5,7 @@ import { Container, Heading, Button, Input, Table, Badge, Text, Toaster, IconBut
 import { useState, useEffect, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 
-const BACKEND_URL = __BACKEND_URL__ ?? ""
+const BACKEND_URL = (__BACKEND_URL__ ?? "").replace(/\/+$/, "")
 const PAGE_SIZE = 20
 
 async function api(path: string, options?: RequestInit) {
