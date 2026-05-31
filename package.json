@@ -1,6 +1,6 @@
 {
   "name": "@sam-ael/medusa-plugin-whatsapp",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "Send WhatsApp Business template messages on Medusa store events.",
   "author": "SAM-AEL (https://www.github.com/SAM-AEL)",
   "homepage": "https://github.com/SAM-AEL",
