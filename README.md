@@ -1,35 +1,50 @@
-<p align="center">
-  <img src="https://img.shields.io/npm/v/@sam-ael/medusa-plugin-whatsapp?style=flat-square&color=16A34A" alt="npm version" />
-  <img src="https://img.shields.io/badge/medusa-v2-0F172A?style=flat-square" alt="Medusa v2" />
-  <img src="https://img.shields.io/badge/category-notification-0F766E?style=flat-square" alt="notification plugin" />
-  <img src="https://img.shields.io/npm/l/@sam-ael/medusa-plugin-whatsapp?style=flat-square" alt="license" />
-</p>
-
 # @sam-ael/medusa-plugin-whatsapp
 
-Production-focused WhatsApp notification plugin for Medusa v2 with event mapping, template dispatch, and admin-managed operational controls.
+A production-focused WhatsApp notification plugin for **Medusa v2** featuring custom event mapping, template dispatching, and admin-managed operational controls.
 
-## Highlights
+[Medusa Website](https://medusajs.com/) | [Medusa Repository](https://github.com/medusajs/medusa)
 
-- Event -> template mapping from Medusa Admin
-- WhatsApp Cloud API template sending
-- Delivery logs with redacted sensitive fields
-- Workflow-driven delivery for worker deployments
-- Hardened API responses and stricter payload validation
-- `POST /admin/whatsapp/mappings/:id` as the primary update endpoint
-- Temporary deprecated `PUT` compatibility with deprecation headers
-- Secret model hardening: access token is env-only
+---
 
-## Install
+## Features
+
+- **Admin-Managed Mappings:** Link any internal Medusa event to an approved WhatsApp message template via the settings dashboard.
+- **Official WhatsApp Cloud API Integration:** Send message templates using official Facebook/Meta business accounts.
+- **Redacted Delivery Logs:** View transmission statuses and records directly in the admin panel with sensitive user data automatically redacted.
+- **Workflow-Driven Execution:** Dispatches messages via workflow engine, enabling reliable asynchronous delivery in background workers.
+- **Enhanced Security:** Keeps authorization secrets (`WHATSAPP_ACCESS_TOKEN`) strictly environment-bound and off the database or API responses.
+- **Rate & Concurrency Limits:** Features configurable delivery concurrency limits and connection timeout controls.
+
+---
+
+## Prerequisites
+
+- [Node.js v18 or greater](https://nodejs.org/en)
+- [A Medusa v2 backend](https://docs.medusajs.com/v2)
+- A Meta Developer Account with the WhatsApp Business platform set up
+- A verified WhatsApp Phone Number ID and System User Access Token
+
+---
+
+## Installation
+
+Run the following command to install the plugin in your Medusa project:
 
 ```bash
 yarn add @sam-ael/medusa-plugin-whatsapp
 ```
 
-## Medusa Configuration
+---
+
+## Configuration
+
+### 1. Register in `medusa-config.ts`
+
+Add the plugin configuration block to your `medusa-config.ts` file:
 
 ```ts
-plugins: [
+const plugins = [
+  // ... other plugins
   {
     resolve: "@sam-ael/medusa-plugin-whatsapp",
     options: {},
@@ -37,7 +52,9 @@ plugins: [
 ]
 ```
 
-## Environment Variables
+### 2. Environment Variables
+
+Define the Meta WhatsApp Cloud API credentials in your `.env` file:
 
 ```env
 WHATSAPP_PHONE_NUMBER_ID=your_phone_number_id
@@ -45,46 +62,50 @@ WHATSAPP_ACCESS_TOKEN=your_access_token
 WHATSAPP_API_VERSION=v25.0
 WHATSAPP_BUSINESS_ACCOUNT_ID=your_waba_id
 
+# Concurrency & cleanups
 WHATSAPP_SEND_CONCURRENCY=2
 WHATSAPP_API_TIMEOUT_MS=15000
 WHATSAPP_LOG_RETENTION_DAYS=30
 ```
 
-## Admin API
+### 3. Run Migrations
+
+To initialize the WhatsApp event mapping and transmission log schemas in your database, run:
+
+```bash
+npx medusa db:migrate
+```
+
+---
+
+## Webhooks & API Reference
+
+WhatsApp notifications are outbound messages sent by your Medusa server to customers' phones. This plugin does not accept incoming webhooks from Meta.
+
+### Admin API Endpoints
+
+Use these endpoints to programmatically manage your notifications and channels (which are also accessible via the built-in Settings UI).
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/admin/whatsapp/config` | Read non-secret config |
-| `POST` | `/admin/whatsapp/config` | Create/update non-secret config |
-| `GET` | `/admin/whatsapp/templates` | Fetch approved WhatsApp templates |
-| `GET` | `/admin/whatsapp/mappings` | List mappings (paginated) |
-| `POST` | `/admin/whatsapp/mappings` | Create mapping |
-| `POST` | `/admin/whatsapp/mappings/:id` | Update mapping (primary) |
-| `PUT` | `/admin/whatsapp/mappings/:id` | Deprecated compatibility endpoint |
-| `DELETE` | `/admin/whatsapp/mappings/:id` | Delete mapping |
-| `GET` | `/admin/whatsapp/logs` | List message logs (redacted payloads) |
-| `POST` | `/admin/whatsapp/manual` | Manual/test message send |
+| `GET` | `/admin/whatsapp/config` | View active non-secret config settings |
+| `POST` | `/admin/whatsapp/config` | Update non-secret config options |
+| `GET` | `/admin/whatsapp/templates` | Fetch approved WhatsApp Business templates from Meta |
+| `GET` | `/admin/whatsapp/mappings` | List active event mappings (paginated) |
+| `POST` | `/admin/whatsapp/mappings` | Create a new event mapping |
+| `POST` | `/admin/whatsapp/mappings/:id` | Update an existing mapping (primary endpoint) |
+| `DELETE` | `/admin/whatsapp/mappings/:id` | Delete a mapping |
+| `GET` | `/admin/whatsapp/logs` | View message delivery logs |
+| `POST` | `/admin/whatsapp/manual` | Dispatch a manual/test template message |
 
-## Security and Reliability Notes
+---
 
-- Unified error contract: `{ success: false, code, message, details? }`
-- `WHATSAPP_ACCESS_TOKEN` is not accepted in API payloads and is not persisted in DB
-- Redaction policy applied to sensitive request/response payload fields
-- Event-send workflow uses bounded concurrency and per-item failure isolation
-- Timeout controls and retention cleanup job included
-- Indexes added for high-frequency lookup fields
+## Test the Plugin
 
-## Quality Gates
-
-```bash
-yarn typecheck
-yarn lint
-yarn test
-yarn build
-```
-
-Smoke tests are available under `src/tests`.
-
-## License
-
-MIT
+1. Ensure your `.env` contains valid WhatsApp Phone Number ID and Access Token credentials (you can use a Meta test number).
+2. Start your Medusa development server.
+3. Log in to the Medusa Admin panel and navigate to Settings → WhatsApp.
+4. Verify you can fetch templates from your Meta account.
+5. Create a mapping for `order.placed` matching one of your templates.
+6. Dispatch a test message manually via the settings dashboard using a valid recipient phone number.
+7. Verify receipt of the message on the recipient device.
